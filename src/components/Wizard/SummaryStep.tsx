@@ -26,8 +26,8 @@ const SummaryStep: React.FC<SummaryStepProps> = ({ data, onChange }) => {
   return (
     <div className="wizard-step">
       <div className="step-header">
-        <h2>Professional Summary</h2>
-        <p>Answer a few questions and we will write a recruiter-ready summary you can edit.</p>
+        <h2>About Me</h2>
+        <p>Write a short introduction, or answer a few questions and we will draft it for you.</p>
       </div>
 
       {showHelper && (
@@ -59,7 +59,7 @@ const SummaryStep: React.FC<SummaryStepProps> = ({ data, onChange }) => {
 
       <div className="summary-editor">
         <FormField
-          label="Your Professional Summary"
+          label="About Me"
           value={data.summary}
           onChange={(v) => update('summary', v)}
           multiline

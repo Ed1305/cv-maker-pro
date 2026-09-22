@@ -1,15 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CVData, defaultCVData, Skill } from './types/cv';
+import { ALL_SECTION_IDS, CVData, defaultCVData, SectionId } from './types/cv';
 import StepIndicator from './components/UI/StepIndicator';
 import PersonalInfoStep from './components/Wizard/PersonalInfoStep';
 import SummaryStep from './components/Wizard/SummaryStep';
-import ExperienceStep from './components/Wizard/ExperienceStep';
-import EducationStep from './components/Wizard/EducationStep';
-import SkillsStep from './components/Wizard/SkillsStep';
-import ProjectsStep from './components/Wizard/ProjectsStep';
-import CertificationsStep from './components/Wizard/CertificationsStep';
-import JobTargetStep from './components/Wizard/JobTargetStep';
-import TemplateStep from './components/Wizard/TemplateStep';
+import SectionsStep from './components/Wizard/SectionsStep';
 import ReviewStep from './components/Wizard/ReviewStep';
 import LivePreview from './components/Preview/LivePreview';
 import TemplateRenderer from './components/Templates/TemplateRenderer';
@@ -18,22 +12,52 @@ import './styles.css';
 
 const steps = [
   { number: 1, title: 'Personal', icon: '1' },
-  { number: 2, title: 'Summary', icon: '2' },
-  { number: 3, title: 'Experience', icon: '3' },
-  { number: 4, title: 'Education', icon: '4' },
-  { number: 5, title: 'Skills', icon: '5' },
-  { number: 6, title: 'Projects', icon: '6' },
-  { number: 7, title: 'More', icon: '7' },
-  { number: 8, title: 'Target', icon: '8' },
-  { number: 9, title: 'Template', icon: '9' },
-  { number: 10, title: 'Review', icon: '10' },
+  { number: 2, title: 'About', icon: '2' },
+  { number: 3, title: 'Sections', icon: '3' },
+  { number: 4, title: 'Review', icon: '4' },
 ];
+
+const inferEnabledSections = (data: Partial<CVData>): SectionId[] => {
+  if (Array.isArray(data.enabledSections) && data.enabledSections.length > 0) {
+    return data.enabledSections.filter((id): id is SectionId => ALL_SECTION_IDS.includes(id));
+  }
+
+  const inferred: SectionId[] = [];
+  if (data.education?.length) inferred.push('education');
+  if (data.workExperience?.length) inferred.push('experience');
+  if (data.skills?.length) inferred.push('skills');
+  if (data.languages?.length) inferred.push('languages');
+  if (data.certifications?.length) inferred.push('certificates');
+  if (data.interests?.length) inferred.push('interests');
+  if (data.projects?.length) inferred.push('projects');
+  if (data.courses?.length) inferred.push('courses');
+  if (data.achievements?.length) inferred.push('awards');
+  if (data.volunteerExperience?.length) inferred.push('organisations');
+  if (data.publications?.length) inferred.push('publications');
+  if (data.references?.length || data.includeReferences) inferred.push('references');
+  if (data.declaration) inferred.push('declaration');
+  if (data.customSections?.length) inferred.push('custom');
+
+  return inferred.length ? inferred : ['education', 'experience', 'skills'];
+};
 
 const loadSavedData = (): CVData => {
   try {
     const saved = localStorage.getItem('cvData');
     if (!saved) return defaultCVData;
-    return { ...defaultCVData, ...JSON.parse(saved) };
+    const parsed = JSON.parse(saved) as Partial<CVData>;
+    return {
+      ...defaultCVData,
+      ...parsed,
+      personalInfo: { ...defaultCVData.personalInfo, ...parsed.personalInfo },
+      professionalSummary: { ...defaultCVData.professionalSummary, ...parsed.professionalSummary },
+      interests: parsed.interests || [],
+      courses: parsed.courses || [],
+      publications: parsed.publications || [],
+      customSections: parsed.customSections || [],
+      declaration: parsed.declaration || '',
+      enabledSections: inferEnabledSections(parsed),
+    };
   } catch {
     return defaultCVData;
   }
@@ -122,12 +146,11 @@ const App: React.FC = () => {
   const handleMakeATS = () => {
     setCvData((prev) => ({
       ...prev,
-      selectedTemplate: prev.selectedTemplate === 'creative' ? 'corporate' : prev.selectedTemplate,
       professionalSummary: {
         ...prev.professionalSummary,
         summary: makeATSFriendlySummary(
           prev.professionalSummary.summary,
-          prev.jobTarget.jobTitle || prev.personalInfo.professionalTitle,
+          prev.personalInfo.professionalTitle,
           prev.skills.map((skill) => skill.name)
         ),
       },
@@ -150,7 +173,7 @@ const App: React.FC = () => {
   };
 
   const nextStep = () => {
-    if (currentStep < 10) setCurrentStep(currentStep + 1);
+    if (currentStep < steps.length) setCurrentStep(currentStep + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -166,48 +189,8 @@ const App: React.FC = () => {
       case 2:
         return <SummaryStep data={cvData.professionalSummary} onChange={(value) => updateField('professionalSummary', value)} />;
       case 3:
-        return <ExperienceStep data={cvData.workExperience} onChange={(value) => updateField('workExperience', value)} />;
+        return <SectionsStep data={cvData} onChange={setCvData} />;
       case 4:
-        return <EducationStep data={cvData.education} onChange={(value) => updateField('education', value)} />;
-      case 5:
-        return <SkillsStep data={cvData.skills} onChange={(value) => updateField('skills', value)} />;
-      case 6:
-        return <ProjectsStep data={cvData.projects} onChange={(value) => updateField('projects', value)} />;
-      case 7:
-        return (
-          <CertificationsStep
-            certifications={cvData.certifications}
-            languages={cvData.languages}
-            achievements={cvData.achievements}
-            volunteerExperience={cvData.volunteerExperience}
-            references={cvData.references}
-            includeReferences={cvData.includeReferences}
-            onCertificationsChange={(value) => updateField('certifications', value)}
-            onLanguagesChange={(value) => updateField('languages', value)}
-            onAchievementsChange={(value) => updateField('achievements', value)}
-            onVolunteerChange={(value) => updateField('volunteerExperience', value)}
-            onReferencesChange={(value) => updateField('references', value)}
-            onIncludeReferencesChange={(value) => updateField('includeReferences', value)}
-          />
-        );
-      case 8:
-        return (
-          <JobTargetStep
-            data={cvData.jobTarget}
-            cvData={cvData}
-            onChange={(value) => updateField('jobTarget', value)}
-            onApplyTailoring={(updates: { summary: string; skills: Skill[] }) => {
-              setCvData((prev) => ({
-                ...prev,
-                professionalSummary: { ...prev.professionalSummary, summary: updates.summary },
-                skills: updates.skills,
-              }));
-            }}
-          />
-        );
-      case 9:
-        return <TemplateStep selectedTemplate={cvData.selectedTemplate} onSelect={(value) => updateField('selectedTemplate', value)} />;
-      case 10:
         return (
           <ReviewStep
             data={cvData}
@@ -250,7 +233,7 @@ const App: React.FC = () => {
           <div className="wizard-navigation">
             <button type="button" className="btn-nav btn-prev" onClick={prevStep} disabled={currentStep === 1}>Previous</button>
             <span className="step-counter">Step {currentStep} of {steps.length}</span>
-            {currentStep < 10 ? (
+            {currentStep < steps.length ? (
               <button type="button" className="btn-nav btn-next" onClick={nextStep}>Next</button>
             ) : (
               <button type="button" className="btn-nav btn-finish" onClick={handleDownload} disabled={isGenerating}>
@@ -270,7 +253,7 @@ const App: React.FC = () => {
           <div className="generating-modal">
             <div className="spinner" />
             <h3>Generating your CV...</h3>
-            <p>Creating a high-quality PDF with the selected template</p>
+            <p>Creating a high-quality PDF</p>
           </div>
         </div>
       )}

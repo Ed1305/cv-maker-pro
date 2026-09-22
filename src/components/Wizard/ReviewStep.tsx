@@ -1,5 +1,6 @@
 import React from 'react';
 import { CVData } from '../../types/cv';
+import { getSectionTitle } from '../../data/sectionOptions';
 import TemplateRenderer from '../Templates/TemplateRenderer';
 
 interface ReviewStepProps {
@@ -12,18 +13,17 @@ interface ReviewStepProps {
 }
 
 const ReviewStep: React.FC<ReviewStepProps> = ({ data, onDownload, onGoToStep, onImproveAll, onMakeATS, onShorten }) => {
-  const { personalInfo, professionalSummary, workExperience, education, skills, projects, certifications, languages } = data;
+  const { personalInfo, professionalSummary, enabledSections } = data;
 
   const sections = [
     { name: 'Personal Information', step: 1, complete: !!personalInfo.fullName && !!personalInfo.email },
-    { name: 'Professional Summary', step: 2, complete: !!professionalSummary.summary },
-    { name: 'Work Experience', step: 3, complete: workExperience.length > 0 },
-    { name: 'Education', step: 4, complete: education.length > 0 },
-    { name: 'Skills', step: 5, complete: skills.length > 0 },
-    { name: 'Projects', step: 6, complete: projects.length > 0 },
-    { name: 'Certifications & More', step: 7, complete: certifications.length > 0 || languages.length > 0 },
-    { name: 'Job Target', step: 8, complete: !!data.jobTarget.jobTitle },
-    { name: 'Template', step: 9, complete: !!data.selectedTemplate },
+    { name: 'About Me', step: 2, complete: !!professionalSummary.summary },
+    { name: 'CV Sections', step: 3, complete: enabledSections.length > 0 },
+    ...enabledSections.map((id) => ({
+      name: getSectionTitle(id),
+      step: 3,
+      complete: true,
+    })),
   ];
 
   const completionRate = Math.round((sections.filter((section) => section.complete).length / sections.length) * 100);
@@ -52,8 +52,8 @@ const ReviewStep: React.FC<ReviewStepProps> = ({ data, onDownload, onGoToStep, o
       </div>
 
       <div className="review-checklist">
-        {sections.map((section) => (
-          <div key={section.step} className={`review-item ${section.complete ? 'complete' : 'incomplete'}`} onClick={() => onGoToStep(section.step)}>
+        {sections.map((section, index) => (
+          <div key={`${section.name}-${index}`} className={`review-item ${section.complete ? 'complete' : 'incomplete'}`} onClick={() => onGoToStep(section.step)}>
             <span className="review-name">{section.name}</span>
             <span className={`review-status ${section.complete ? 'done' : 'missing'}`}>
               {section.complete ? 'Complete' : 'Missing'}
@@ -74,7 +74,7 @@ const ReviewStep: React.FC<ReviewStepProps> = ({ data, onDownload, onGoToStep, o
         <button type="button" className="btn-download-large" onClick={onDownload}>
           Download High-Quality PDF
         </button>
-        <p className="download-note">Generated as a high-resolution A4 PDF using your selected template</p>
+        <p className="download-note">Generated as a high-resolution A4 PDF</p>
       </div>
     </div>
   );

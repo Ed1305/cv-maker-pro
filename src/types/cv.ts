@@ -117,12 +117,64 @@ export interface Reference {
   relationship: string;
 }
 
-export interface JobTarget {
-  jobTitle: string;
-  industry: string;
-  roleType: string;
-  jobDescription: string;
+export interface Interest {
+  id: string;
+  name: string;
 }
+
+export interface Course {
+  id: string;
+  name: string;
+  organization: string;
+  date: string;
+}
+
+export interface Publication {
+  id: string;
+  title: string;
+  publisher: string;
+  date: string;
+  url: string;
+}
+
+export interface CustomSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export type SectionId =
+  | 'education'
+  | 'experience'
+  | 'skills'
+  | 'languages'
+  | 'certificates'
+  | 'interests'
+  | 'projects'
+  | 'courses'
+  | 'awards'
+  | 'organisations'
+  | 'publications'
+  | 'references'
+  | 'declaration'
+  | 'custom';
+
+export const ALL_SECTION_IDS: SectionId[] = [
+  'education',
+  'experience',
+  'skills',
+  'languages',
+  'certificates',
+  'interests',
+  'projects',
+  'courses',
+  'awards',
+  'organisations',
+  'publications',
+  'references',
+  'declaration',
+  'custom',
+];
 
 export interface CVData {
   personalInfo: PersonalInfo;
@@ -137,8 +189,12 @@ export interface CVData {
   volunteerExperience: VolunteerExperience[];
   references: Reference[];
   includeReferences: boolean;
-  jobTarget: JobTarget;
-  selectedTemplate: string;
+  interests: Interest[];
+  courses: Course[];
+  publications: Publication[];
+  customSections: CustomSection[];
+  declaration: string;
+  enabledSections: SectionId[];
 }
 
 export const defaultCVData: CVData = {
@@ -179,11 +235,10 @@ export const defaultCVData: CVData = {
   volunteerExperience: [],
   references: [],
   includeReferences: false,
-  jobTarget: {
-    jobTitle: '',
-    industry: '',
-    roleType: '',
-    jobDescription: '',
-  },
-  selectedTemplate: 'classic',
+  interests: [],
+  courses: [],
+  publications: [],
+  customSections: [],
+  declaration: '',
+  enabledSections: ['education', 'experience', 'skills'],
 };
