@@ -1,46 +1,91 @@
-import React from 'react';
 import FormField from '../UI/FormField';
-import { PersonalInfo } from '../../types/cv';
+import type { PersonalInfo } from '../../cv/schema';
+import { validatePersonalInfo } from '../../cv/validation';
+import type { EditorProps } from './types';
 
-interface PersonalInfoStepProps {
-  data: PersonalInfo;
-  onChange: (data: PersonalInfo) => void;
-}
-
-const PersonalInfoStep: React.FC<PersonalInfoStepProps> = ({ data, onChange }) => {
-  const update = (field: keyof PersonalInfo, value: string) => {
-    const updated = { ...data, [field]: value };
-    if (field === 'fullName') {
-      const parts = value.trim().split(/\s+/);
-      updated.firstName = parts[0] || '';
-      updated.lastName = parts.slice(1).join(' ') || '';
-    }
-    onChange(updated);
-  };
+const PersonalInfoStep = ({ value: info, onChange }: EditorProps<PersonalInfo>) => {
+  const errors = validatePersonalInfo(info);
+  const set = (field: keyof PersonalInfo) => (next: string) => onChange({ ...info, [field]: next });
 
   return (
     <div className="wizard-step">
       <div className="step-header">
-        <h2>Your details</h2>
-        <p>This appears at the top of your CV. Keep it short and easy to contact you.</p>
+        <h2 tabIndex={-1}>Your details</h2>
+        <p>This appears at the top of your CV. Keep it short and make it easy to contact you.</p>
       </div>
 
       <div className="form-grid">
-        <FormField label="Full name" value={data.fullName} onChange={(v) => update('fullName', v)} placeholder="e.g. Sebastian Bennett" required />
-        <FormField label="Professional title" value={data.professionalTitle} onChange={(v) => update('professionalTitle', v)} placeholder="e.g. Professional Accountant" required />
+        <FormField
+          label="Full name"
+          value={info.fullName}
+          onChange={set('fullName')}
+          placeholder="e.g. Sebastian Bennett"
+          required
+          autoComplete="name"
+          error={errors.fullName}
+        />
+        <FormField
+          label="Professional title"
+          value={info.professionalTitle}
+          onChange={set('professionalTitle')}
+          placeholder="e.g. Accountant"
+          autoComplete="organization-title"
+          optional
+        />
       </div>
 
       <div className="form-grid">
-        <FormField label="Email" value={data.email} onChange={(v) => update('email', v)} type="email" placeholder="e.g. hello@email.com" required />
-        <FormField label="Phone" value={data.phone} onChange={(v) => update('phone', v)} type="tel" placeholder="e.g. +1 234 567 890" required />
+        <FormField
+          label="Email"
+          value={info.email}
+          onChange={set('email')}
+          type="email"
+          inputMode="email"
+          placeholder="e.g. hello@email.com"
+          required
+          autoComplete="email"
+          error={errors.email}
+        />
+        <FormField
+          label="Phone"
+          value={info.phone}
+          onChange={set('phone')}
+          type="tel"
+          inputMode="tel"
+          placeholder="e.g. +27 82 123 4567"
+          autoComplete="tel"
+          error={errors.phone}
+        />
       </div>
 
       <div className="form-grid">
-        <FormField label="City" value={data.city} onChange={(v) => update('city', v)} placeholder="e.g. Any City" />
-        <FormField label="Country" value={data.country} onChange={(v) => update('country', v)} placeholder="e.g. Any Country" />
+        <FormField
+          label="City"
+          value={info.city}
+          onChange={set('city')}
+          placeholder="e.g. Cape Town"
+          autoComplete="address-level2"
+        />
+        <FormField
+          label="Country"
+          value={info.country}
+          onChange={set('country')}
+          placeholder="e.g. South Africa"
+          autoComplete="country-name"
+        />
       </div>
 
-      <FormField label="LinkedIn or website" value={data.linkedinUrl} onChange={(v) => update('linkedinUrl', v)} placeholder="https://linkedin.com/in/yourprofile" optional />
+      <FormField
+        label="LinkedIn or website"
+        value={info.linkedinUrl}
+        onChange={set('linkedinUrl')}
+        type="url"
+        inputMode="url"
+        placeholder="linkedin.com/in/yourprofile"
+        autoComplete="url"
+        optional
+        error={errors.linkedinUrl}
+      />
     </div>
   );
 };

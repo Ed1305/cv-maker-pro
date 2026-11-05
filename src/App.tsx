@@ -1,262 +1,246 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ALL_SECTION_IDS, CVData, defaultCVData, SectionId } from './types/cv';
-import StepIndicator from './components/UI/StepIndicator';
-import PersonalInfoStep from './components/Wizard/PersonalInfoStep';
-import SummaryStep from './components/Wizard/SummaryStep';
-import SectionsStep from './components/Wizard/SectionsStep';
-import ReviewStep from './components/Wizard/ReviewStep';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createEmptyCv, type CVData, type SectionId } from './cv/schema';
+import { backupFileName, parseBackup, serialize } from './cv/storage';
+import { polishCv, trimToKeyPoints, withKeySkills } from './cv/text';
+import { downloadBlob } from './lib/download';
+import type { PatchCv } from './sections/registry';
+import { useCvStore } from './state/useCvStore';
+import DataMenu from './components/DataMenu';
 import LivePreview from './components/Preview/LivePreview';
-import TemplateRenderer from './components/Templates/TemplateRenderer';
-import { improveText, makeATSFriendlySummary, shortenText } from './utils/helpers';
-import './styles.css';
+import StepIndicator, { type WizardStep } from './components/UI/StepIndicator';
+import Toast, { type ToastMessage } from './components/UI/Toast';
+import PersonalInfoStep from './components/Wizard/PersonalInfoStep';
+import ReviewStep from './components/Wizard/ReviewStep';
+import SectionsStep from './components/Wizard/SectionsStep';
+import SummaryStep from './components/Wizard/SummaryStep';
 
-const steps = [
-  { number: 1, title: 'Personal', icon: '1' },
-  { number: 2, title: 'About', icon: '2' },
-  { number: 3, title: 'Sections', icon: '3' },
-  { number: 4, title: 'Review', icon: '4' },
+const STEPS: WizardStep[] = [
+  { number: 1, title: 'Personal' },
+  { number: 2, title: 'About' },
+  { number: 3, title: 'Sections' },
+  { number: 4, title: 'Review' },
 ];
 
-const inferEnabledSections = (data: Partial<CVData>): SectionId[] => {
-  if (Array.isArray(data.enabledSections) && data.enabledSections.length > 0) {
-    return data.enabledSections.filter((id): id is SectionId => ALL_SECTION_IDS.includes(id));
-  }
+const isTypingTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
-  const inferred: SectionId[] = [];
-  if (data.education?.length) inferred.push('education');
-  if (data.workExperience?.length) inferred.push('experience');
-  if (data.skills?.length) inferred.push('skills');
-  if (data.languages?.length) inferred.push('languages');
-  if (data.certifications?.length) inferred.push('certificates');
-  if (data.interests?.length) inferred.push('interests');
-  if (data.projects?.length) inferred.push('projects');
-  if (data.courses?.length) inferred.push('courses');
-  if (data.achievements?.length) inferred.push('awards');
-  if (data.volunteerExperience?.length) inferred.push('organisations');
-  if (data.publications?.length) inferred.push('publications');
-  if (data.references?.length || data.includeReferences) inferred.push('references');
-  if (data.declaration) inferred.push('declaration');
-  if (data.customSections?.length) inferred.push('custom');
+const App = () => {
+  const { data, update, commit, undo, saveOk } = useCvStore();
+  const [step, setStep] = useState(1);
+  const [editing, setEditing] = useState<SectionId | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const toastId = useRef(0);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const firstRender = useRef(true);
 
-  return inferred.length ? inferred : ['education', 'experience', 'skills'];
-};
-
-const loadSavedData = (): CVData => {
-  try {
-    const saved = localStorage.getItem('cvData');
-    if (!saved) return defaultCVData;
-    const parsed = JSON.parse(saved) as Partial<CVData>;
-    return {
-      ...defaultCVData,
-      ...parsed,
-      personalInfo: { ...defaultCVData.personalInfo, ...parsed.personalInfo },
-      professionalSummary: { ...defaultCVData.professionalSummary, ...parsed.professionalSummary },
-      interests: parsed.interests || [],
-      courses: parsed.courses || [],
-      publications: parsed.publications || [],
-      customSections: parsed.customSections || [],
-      declaration: parsed.declaration || '',
-      enabledSections: inferEnabledSections(parsed),
-    };
-  } catch {
-    return defaultCVData;
-  }
-};
-
-const App: React.FC = () => {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [cvData, setCvData] = useState<CVData>(loadSavedData);
-  const [showMobilePreview, setShowMobilePreview] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem('cvData', JSON.stringify(cvData));
-  }, [cvData]);
-
-  const updateField = useCallback(<K extends keyof CVData>(field: K, value: CVData[K]) => {
-    setCvData((prev) => ({ ...prev, [field]: value }));
+  const notify = useCallback((message: Omit<ToastMessage, 'id'>) => {
+    toastId.current += 1;
+    setToast({ ...message, id: toastId.current });
   }, []);
+  const dismissToast = useCallback(() => setToast(null), []);
 
-  const handleDownload = useCallback(async () => {
-    setIsGenerating(true);
+  const undoWithToast = useCallback(() => {
+    const label = undo();
+    if (label) notify({ message: `Undone: ${label}` });
+  }, [undo, notify]);
 
-    try {
-      const html2pdfModule = await import('html2pdf.js');
-      const html2pdf = html2pdfModule.default;
-      const { createRoot } = await import('react-dom/client');
+  /** Undoable change with an "Undo" toast. */
+  const change = useCallback(
+    (label: string, recipe: (cv: CVData) => CVData) => {
+      if (commit(label, recipe)) notify({ message: label, action: { label: 'Undo', onClick: undoWithToast } });
+      else notify({ message: 'Nothing to change.' });
+    },
+    [commit, notify, undoWithToast],
+  );
 
-      const container = document.createElement('div');
-      container.style.position = 'fixed';
-      container.style.left = '-10000px';
-      container.style.top = '0';
-      container.style.width = '210mm';
-      container.style.background = 'white';
-      document.body.appendChild(container);
+  const patch: PatchCv = useCallback(
+    (fields, undoLabel) => {
+      if (undoLabel) change(undoLabel, (cv) => ({ ...cv, ...fields }));
+      else update((cv) => ({ ...cv, ...fields }));
+    },
+    [change, update],
+  );
 
-      const root = createRoot(container);
-      await new Promise<void>((resolve) => {
-        root.render(
-          <div id="pdf-render" style={{ width: '210mm', background: 'white' }}>
-            <TemplateRenderer data={cvData} scale={1} />
-          </div>
-        );
-        setTimeout(resolve, 700);
-      });
+  // Ctrl/Cmd+Z undoes CV-level changes when the user isn't typing in a field.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 'z' &&
+        !isTypingTarget(event.target)
+      ) {
+        event.preventDefault();
+        undoWithToast();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undoWithToast]);
 
-      const element = container.querySelector('#pdf-render') as HTMLElement;
-      const safeName = (cvData.personalInfo.fullName || 'CV').replace(/[^\w\s-]/g, '').trim() || 'CV';
-
-      await html2pdf()
-        .set({
-          margin: 0,
-          filename: `${safeName}_Resume.pdf`,
-          image: { type: 'jpeg', quality: 1 },
-          html2canvas: { scale: 3, useCORS: true, letterRendering: true, logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
-        })
-        .from(element)
-        .save();
-
-      root.unmount();
-      document.body.removeChild(container);
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      window.print();
-    } finally {
-      setIsGenerating(false);
+  // Move focus to the new step's heading so keyboard and screen-reader users know where they are.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
     }
-  }, [cvData]);
+    contentRef.current?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+    const panel = contentRef.current?.closest('.wizard-panel');
+    if (panel) panel.scrollTop = 0;
+  }, [step, editing]);
 
-  const handleImproveAll = () => {
-    setCvData((prev) => ({
-      ...prev,
-      professionalSummary: {
-        ...prev.professionalSummary,
-        summary: improveText(prev.professionalSummary.summary),
-      },
-      workExperience: prev.workExperience.map((exp) => ({
-        ...exp,
-        responsibilities: exp.responsibilities.map((item) => (item ? improveText(item) : item)),
-        achievements: exp.achievements.map((item) => (item ? improveText(item) : item)),
-      })),
-    }));
+  const goTo = (target: number, section: SectionId | null = null) => {
+    setStep(target);
+    setEditing(section);
+    setShowPreview(false);
   };
 
-  const handleMakeATS = () => {
-    setCvData((prev) => ({
-      ...prev,
-      professionalSummary: {
-        ...prev.professionalSummary,
-        summary: makeATSFriendlySummary(
-          prev.professionalSummary.summary,
-          prev.personalInfo.professionalTitle,
-          prev.skills.map((skill) => skill.name)
-        ),
-      },
-    }));
+  const handleDownload = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { exportCvPdf } = await import('./pdf/exportPdf');
+      await exportCvPdf(data);
+      notify({ message: 'Your PDF has been downloaded.' });
+    } catch (error) {
+      console.error('PDF generation failed', error);
+      notify({ tone: 'error', message: "Couldn't create the PDF. Please try again — your CV is still saved." });
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const handleShorten = () => {
-    setCvData((prev) => ({
-      ...prev,
-      professionalSummary: {
-        ...prev.professionalSummary,
-        summary: shortenText(prev.professionalSummary.summary),
-      },
-      workExperience: prev.workExperience.map((exp) => ({
-        ...exp,
-        responsibilities: exp.responsibilities.filter(Boolean).slice(0, 3),
-        achievements: exp.achievements.filter(Boolean).slice(0, 2),
-      })),
-    }));
+  const handleExport = () =>
+    downloadBlob(new Blob([serialize(data)], { type: 'application/json' }), backupFileName(data));
+
+  const handleImport = async (file: File) => {
+    try {
+      const restored = parseBackup(await file.text());
+      change('Restored CV from backup', () => restored);
+      goTo(4);
+    } catch (error) {
+      notify({ tone: 'error', message: error instanceof Error ? error.message : "Couldn't read that file." });
+    }
   };
 
-  const nextStep = () => {
-    if (currentStep < steps.length) setCurrentStep(currentStep + 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const prevStep = () => {
-    if (currentStep > 1) setCurrentStep(currentStep - 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleReset = () => {
+    change('Started a new CV', () => createEmptyCv());
+    goTo(1);
   };
 
   const renderStep = () => {
-    switch (currentStep) {
+    switch (step) {
       case 1:
-        return <PersonalInfoStep data={cvData.personalInfo} onChange={(value) => updateField('personalInfo', value)} />;
+        return <PersonalInfoStep value={data.personalInfo} onChange={(next) => patch({ personalInfo: next })} />;
       case 2:
-        return <SummaryStep data={cvData.professionalSummary} onChange={(value) => updateField('professionalSummary', value)} />;
-      case 3:
-        return <SectionsStep data={cvData} onChange={setCvData} />;
-      case 4:
         return (
-          <ReviewStep
-            data={cvData}
-            onDownload={handleDownload}
-            onGoToStep={setCurrentStep}
-            onImproveAll={handleImproveAll}
-            onMakeATS={handleMakeATS}
-            onShorten={handleShorten}
+          <SummaryStep
+            value={data.professionalSummary}
+            onChange={(next, label) => patch({ professionalSummary: next }, label)}
           />
         );
+      case 3:
+        return <SectionsStep data={data} patch={patch} editing={editing} onEdit={setEditing} />;
       default:
-        return null;
+        return (
+          <ReviewStep
+            data={data}
+            exporting={exporting}
+            onDownload={handleDownload}
+            onGoTo={(target, section) => goTo(target, section ?? null)}
+            onPolish={() => change('Polished wording', polishCv)}
+            onKeySkills={() =>
+              change('Added key skills to summary', (cv) => ({
+                ...cv,
+                professionalSummary: {
+                  ...cv.professionalSummary,
+                  summary: withKeySkills(
+                    cv.professionalSummary.summary,
+                    cv.skills.map((skill) => skill.name),
+                  ),
+                },
+              }))
+            }
+            onTrim={() => change('Trimmed to key points', trimToKeyPoints)}
+          />
+        );
     }
   };
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to form
+      </a>
       <header className="app-header">
-        <div className="header-left">
-          <h1 className="app-logo">
-            <span className="logo-text">CV<span className="logo-accent">Maker</span></span>
-          </h1>
-        </div>
+        <p className="app-logo">
+          CV<span className="logo-accent">Maker</span>
+        </p>
         <div className="header-center">
-          <StepIndicator steps={steps} currentStep={currentStep} onStepClick={setCurrentStep} />
+          <StepIndicator steps={STEPS} currentStep={step} onStepClick={(target) => goTo(target)} />
         </div>
         <div className="header-right">
-          <button type="button" className="btn-mobile-preview" onClick={() => setShowMobilePreview(!showMobilePreview)}>
-            {showMobilePreview ? 'Form' : 'Preview'}
+          <DataMenu onExport={handleExport} onImport={handleImport} onReset={handleReset} />
+          <button
+            type="button"
+            className="btn-mobile-preview"
+            aria-pressed={showPreview}
+            onClick={() => setShowPreview((value) => !value)}
+          >
+            {showPreview ? 'Edit' : 'Preview'}
           </button>
-          <button type="button" className="btn-header-download" onClick={handleDownload} disabled={isGenerating}>
-            {isGenerating ? 'Generating...' : 'Download'}
+          <button
+            type="button"
+            className="btn-header-download"
+            onClick={handleDownload}
+            disabled={exporting}
+            aria-busy={exporting}
+          >
+            {exporting ? 'Preparing…' : 'Download'}
           </button>
         </div>
       </header>
 
+      {!saveOk && (
+        <div className="save-warning" role="alert">
+          Your browser isn't letting us save (private mode or storage full). Use{' '}
+          <strong>Your data → Download backup</strong> so you don't lose your work.
+        </div>
+      )}
+
       <main className="app-main">
-        <div className={`wizard-panel ${showMobilePreview ? 'hidden-mobile' : ''}`}>
-          <div className="wizard-content">{renderStep()}</div>
+        <div className={`wizard-panel${showPreview ? ' hidden-mobile' : ''}`}>
+          <div className="wizard-content" id="main-content" ref={contentRef}>
+            {renderStep()}
+          </div>
           <div className="wizard-navigation">
-            <button type="button" className="btn-nav btn-prev" onClick={prevStep} disabled={currentStep === 1}>Previous</button>
-            <span className="step-counter">Step {currentStep} of {steps.length}</span>
-            {currentStep < steps.length ? (
-              <button type="button" className="btn-nav btn-next" onClick={nextStep}>Next</button>
+            <button type="button" className="btn-nav btn-prev" onClick={() => goTo(step - 1)} disabled={step === 1}>
+              Back
+            </button>
+            <span className="step-counter">
+              Step {step} of {STEPS.length}
+            </span>
+            {step < STEPS.length ? (
+              <button type="button" className="btn-nav btn-next" onClick={() => goTo(step + 1)}>
+                Next
+              </button>
             ) : (
-              <button type="button" className="btn-nav btn-finish" onClick={handleDownload} disabled={isGenerating}>
-                {isGenerating ? 'Generating...' : 'Download PDF'}
+              <button type="button" className="btn-nav btn-finish" onClick={handleDownload} disabled={exporting}>
+                {exporting ? 'Preparing…' : 'Download PDF'}
               </button>
             )}
           </div>
         </div>
 
-        <div className={`preview-panel ${showMobilePreview ? 'visible-mobile' : ''}`}>
-          <LivePreview data={cvData} onDownload={handleDownload} />
-        </div>
+        <aside className={`preview-panel${showPreview ? ' visible-mobile' : ''}`} aria-label="CV preview">
+          <LivePreview data={data} exporting={exporting} onDownload={handleDownload} />
+        </aside>
       </main>
 
-      {isGenerating && (
-        <div className="generating-overlay">
-          <div className="generating-modal">
-            <div className="spinner" />
-            <h3>Generating your CV...</h3>
-            <p>Creating a high-quality PDF</p>
-          </div>
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 };

@@ -1,45 +1,50 @@
-import React from 'react';
+import { Fragment } from 'react';
+import { CheckIcon } from './icons';
 
-interface Step {
+export interface WizardStep {
   number: number;
   title: string;
-  icon: string;
 }
 
 interface StepIndicatorProps {
-  steps: Step[];
+  steps: WizardStep[];
   currentStep: number;
   onStepClick: (step: number) => void;
 }
 
-const StepIndicator: React.FC<StepIndicatorProps> = ({ steps, currentStep, onStepClick }) => {
-  return (
-    <div className="step-indicator">
-      {steps.map((step, index) => (
-        <React.Fragment key={step.number}>
-          <button
-            type="button"
-            className={`step-item ${currentStep === step.number ? 'active' : ''} ${currentStep > step.number ? 'completed' : ''}`}
-            onClick={() => onStepClick(step.number)}
-          >
-            <div className="step-circle">
-              {currentStep > step.number ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              ) : (
-                <span>{step.icon}</span>
-              )}
-            </div>
-            <span className="step-title">{step.title}</span>
-          </button>
-          {index < steps.length - 1 && (
-            <div className={`step-connector ${currentStep > step.number ? 'completed' : ''}`} />
-          )}
-        </React.Fragment>
-      ))}
-    </div>
-  );
-};
+const StepIndicator = ({ steps, currentStep, onStepClick }: StepIndicatorProps) => (
+  <nav aria-label="Progress">
+    <ol className="step-indicator">
+      {steps.map((step, index) => {
+        const done = currentStep > step.number;
+        const active = currentStep === step.number;
+        return (
+          <Fragment key={step.number}>
+            <li>
+              <button
+                type="button"
+                className={`step-item${active ? ' active' : ''}${done ? ' completed' : ''}`}
+                aria-current={active ? 'step' : undefined}
+                onClick={() => onStepClick(step.number)}
+              >
+                <span className="step-circle" aria-hidden="true">
+                  {done ? <CheckIcon /> : step.number}
+                </span>
+                <span className="step-title">
+                  <span className="visually-hidden">{`Step ${step.number}: `}</span>
+                  {step.title}
+                  {done && <span className="visually-hidden"> (done)</span>}
+                </span>
+              </button>
+            </li>
+            {index < steps.length - 1 && (
+              <li aria-hidden="true" className={`step-connector${done ? ' completed' : ''}`} />
+            )}
+          </Fragment>
+        );
+      })}
+    </ol>
+  </nav>
+);
 
 export default StepIndicator;
