@@ -1,210 +1,297 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import FormField from '../UI/FormField';
-import { WorkExperience } from '../../types/cv';
-import { generateAchievementBullet, generateId, improveText } from '../../utils/helpers';
+import ItemCard from '../UI/ItemCard';
+import { CloseIcon } from '../UI/icons';
+import { createId } from '../../cv/id';
+import { EMPLOYMENT_TYPES, newBullet, type Bullet, type WorkExperience } from '../../cv/schema';
+import { IMPACT_TYPES, achievementBullet, polishBullet, type ImpactType } from '../../cv/text';
+import { dateRangeError } from '../../cv/validation';
+import { type EditorProps, moveItem, replaceById } from './types';
 
-interface ExperienceStepProps {
-  data: WorkExperience[];
-  onChange: (data: WorkExperience[]) => void;
+const EMPLOYMENT_LABELS: Record<WorkExperience['employmentType'], string> = {
+  'full-time': 'Full-time',
+  'part-time': 'Part-time',
+  contract: 'Contract',
+  internship: 'Internship',
+  freelance: 'Freelance',
+};
+
+type BulletField = 'responsibilities' | 'achievements';
+
+const emptyJob = (): WorkExperience => ({
+  id: createId(),
+  companyName: '',
+  jobTitle: '',
+  location: '',
+  employmentType: 'full-time',
+  startDate: '',
+  endDate: '',
+  currentlyWorking: false,
+  responsibilities: [newBullet()],
+  achievements: [newBullet()],
+});
+
+interface BulletListProps {
+  label: string;
+  itemLabel: string;
+  placeholder: string;
+  bullets: Bullet[];
+  onChange: (next: Bullet[], undoLabel?: string) => void;
 }
 
-const IMPACT_TYPES = [
-  'Saved time',
-  'Reduced costs',
-  'Increased productivity',
-  'Built something new',
-  'Automated a process',
-  'Managed people',
-  'Improved customer experience',
-  'Other',
-];
+const BulletList = ({ label, itemLabel, placeholder, bullets, onChange }: BulletListProps) => (
+  <>
+    {bullets.map((bullet, index) => (
+      <div key={bullet.id} className="list-item-row">
+        <span className="bullet" aria-hidden="true">
+          •
+        </span>
+        <input
+          className="form-input"
+          value={bullet.text}
+          aria-label={`${itemLabel} ${index + 1}`}
+          placeholder={placeholder}
+          onChange={(e) => onChange(bullets.map((b) => (b.id === bullet.id ? { ...b, text: e.target.value } : b)))}
+        />
+        {bullets.length > 1 && (
+          <button
+            type="button"
+            className="btn-icon btn-delete-sm"
+            aria-label={`Remove ${itemLabel.toLowerCase()} ${index + 1}`}
+            onClick={() =>
+              onChange(
+                bullets.filter((b) => b.id !== bullet.id),
+                `Removed ${itemLabel.toLowerCase()}`,
+              )
+            }
+          >
+            <CloseIcon />
+          </button>
+        )}
+      </div>
+    ))}
+    <button type="button" className="btn-text btn-add" onClick={() => onChange([...bullets, newBullet()])}>
+      + Add {label}
+    </button>
+  </>
+);
 
-const ExperienceStep: React.FC<ExperienceStepProps> = ({ data, onChange }) => {
-  const [expandedId, setExpandedId] = useState<string | null>(data[0]?.id || null);
-  const [impactType, setImpactType] = useState<string>('Saved time');
+const ExperienceStep = ({ value: jobs, onChange }: EditorProps<WorkExperience[]>) => {
+  const [expandedId, setExpandedId] = useState<string | null>(jobs[0]?.id ?? null);
+  const [impactType, setImpactType] = useState<ImpactType>('Saved time');
   const [impactNote, setImpactNote] = useState('');
 
-  const addExperience = () => {
-    const newExp: WorkExperience = {
-      id: generateId(),
-      companyName: '',
-      jobTitle: '',
-      location: '',
-      employmentType: 'full-time',
-      startDate: '',
-      endDate: '',
-      currentlyWorking: false,
-      responsibilities: [''],
-      achievements: [''],
-    };
-    onChange([...data, newExp]);
-    setExpandedId(newExp.id);
+  const update = (id: string, patch: Partial<WorkExperience>, undoLabel?: string) =>
+    onChange(replaceById(jobs, id, patch), undoLabel);
+
+  const addJob = () => {
+    const job = emptyJob();
+    onChange([...jobs, job]);
+    setExpandedId(job.id);
   };
 
-  const updateExperience = (id: string, field: keyof WorkExperience, value: unknown) => {
-    onChange(data.map((exp) => (exp.id === id ? { ...exp, [field]: value } : exp)));
-  };
+  const setBullets = (job: WorkExperience, field: BulletField) => (next: Bullet[], undoLabel?: string) =>
+    update(job.id, { [field]: next }, undoLabel);
 
-  const removeExperience = (id: string) => onChange(data.filter((exp) => exp.id !== id));
+  const polish = (job: WorkExperience) =>
+    update(
+      job.id,
+      {
+        responsibilities: job.responsibilities.map((b) => ({ ...b, text: polishBullet(b.text) })),
+        achievements: job.achievements.map((b) => ({ ...b, text: polishBullet(b.text) })),
+      },
+      'Polished wording',
+    );
 
-  const updateList = (expId: string, field: 'responsibilities' | 'achievements', index: number, value: string) => {
-    const exp = data.find((item) => item.id === expId);
-    if (!exp) return;
-    const next = [...exp[field]];
-    next[index] = value;
-    updateExperience(expId, field, next);
-  };
-
-  const addListItem = (expId: string, field: 'responsibilities' | 'achievements') => {
-    const exp = data.find((item) => item.id === expId);
-    if (exp) updateExperience(expId, field, [...exp[field], '']);
-  };
-
-  const removeListItem = (expId: string, field: 'responsibilities' | 'achievements', index: number) => {
-    const exp = data.find((item) => item.id === expId);
-    if (exp) updateExperience(expId, field, exp[field].filter((_, i) => i !== index));
-  };
-
-  const improveResponsibilities = (expId: string) => {
-    const exp = data.find((item) => item.id === expId);
-    if (exp) updateExperience(expId, 'responsibilities', exp.responsibilities.map((item) => (item ? improveText(item) : item)));
-  };
-
-  const addImpactAchievement = (expId: string) => {
-    if (!impactNote.trim()) return;
-    const exp = data.find((item) => item.id === expId);
-    if (!exp) return;
-    const bullet = generateAchievementBullet(impactType, impactNote);
-    const cleaned = exp.achievements.filter(Boolean);
-    updateExperience(expId, 'achievements', [...cleaned, bullet]);
+  const addResult = (job: WorkExperience) => {
+    const text = achievementBullet(impactType, impactNote);
+    if (!text) return;
+    update(job.id, { achievements: [...job.achievements.filter((b) => b.text.trim()), newBullet(text)] });
     setImpactNote('');
-  };
-
-  const moveExperience = (index: number, direction: 'up' | 'down') => {
-    const next = [...data];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= next.length) return;
-    [next[index], next[newIndex]] = [next[newIndex], next[index]];
-    onChange(next);
   };
 
   return (
     <div className="wizard-step">
-      <div className="step-header">
-        <h2>Work Experience</h2>
-        <p>Start with your most recent role. Describe what you did, then turn results into strong bullets.</p>
-      </div>
-
-      {data.length === 0 && (
+      {jobs.length === 0 && (
         <div className="empty-state">
-          <div className="empty-icon">💼</div>
           <h3>No work experience added yet</h3>
-          <p>Add your first position to get started</p>
+          <p>Add your most recent position to get started.</p>
         </div>
       )}
 
-      {data.map((exp, index) => (
-        <div key={exp.id} className={`experience-card ${expandedId === exp.id ? 'expanded' : ''}`}>
-          <div className="experience-card-header" onClick={() => setExpandedId(expandedId === exp.id ? null : exp.id)}>
-            <div className="experience-card-info">
-              <h3>{exp.jobTitle || 'Untitled Position'}</h3>
-              <p>{exp.companyName || 'Company Name'}{exp.location ? ` • ${exp.location}` : ''}</p>
+      {jobs.map((job, index) => {
+        const title = job.jobTitle || 'Untitled position';
+        const dateError = dateRangeError(job.startDate, job.endDate, job.currentlyWorking);
+        return (
+          <ItemCard
+            key={job.id}
+            title={title}
+            subtitle={[job.companyName || 'Company', job.location].filter(Boolean).join(' • ')}
+            expanded={expandedId === job.id}
+            onToggle={() => setExpandedId(expandedId === job.id ? null : job.id)}
+            onRemove={() =>
+              onChange(
+                jobs.filter((item) => item.id !== job.id),
+                `Deleted "${title}"`,
+              )
+            }
+            onMoveUp={index > 0 ? () => onChange(moveItem(jobs, index, -1)) : undefined}
+            onMoveDown={index < jobs.length - 1 ? () => onChange(moveItem(jobs, index, 1)) : undefined}
+          >
+            <div className="form-grid">
+              <FormField
+                label="Job title"
+                value={job.jobTitle}
+                onChange={(v) => update(job.id, { jobTitle: v })}
+                placeholder="e.g. Senior Developer"
+                required
+                error={job.jobTitle.trim() ? undefined : 'Add a job title.'}
+              />
+              <FormField
+                label="Company"
+                value={job.companyName}
+                onChange={(v) => update(job.id, { companyName: v })}
+                placeholder="e.g. Acme Ltd"
+                required
+                error={job.companyName.trim() ? undefined : 'Add the company name.'}
+                autoComplete="organization"
+              />
             </div>
-            <div className="experience-card-actions">
-              {index > 0 && <button type="button" className="btn-icon" onClick={(e) => { e.stopPropagation(); moveExperience(index, 'up'); }}>↑</button>}
-              {index < data.length - 1 && <button type="button" className="btn-icon" onClick={(e) => { e.stopPropagation(); moveExperience(index, 'down'); }}>↓</button>}
-              <button type="button" className="btn-icon btn-delete" onClick={(e) => { e.stopPropagation(); removeExperience(exp.id); }}>🗑</button>
-              <span className={`chevron ${expandedId === exp.id ? 'open' : ''}`}>▼</span>
-            </div>
-          </div>
 
-          {expandedId === exp.id && (
-            <div className="experience-card-body">
-              <div className="form-grid">
-                <FormField label="Job Title" value={exp.jobTitle} onChange={(v) => updateExperience(exp.id, 'jobTitle', v)} placeholder="e.g. Senior Developer" required />
-                <FormField label="Company Name" value={exp.companyName} onChange={(v) => updateExperience(exp.id, 'companyName', v)} placeholder="e.g. Google" required />
-              </div>
-
-              <div className="form-grid form-grid-3">
-                <FormField label="Location" value={exp.location} onChange={(v) => updateExperience(exp.id, 'location', v)} placeholder="e.g. Cape Town, SA" />
-                <div className="form-field">
-                  <label className="form-label">Employment Type</label>
-                  <select className="form-input" value={exp.employmentType} onChange={(e) => updateExperience(exp.id, 'employmentType', e.target.value)}>
-                    <option value="full-time">Full-time</option>
-                    <option value="part-time">Part-time</option>
-                    <option value="contract">Contract</option>
-                    <option value="internship">Internship</option>
-                    <option value="freelance">Freelance</option>
-                  </select>
-                </div>
-                <div />
-              </div>
-
-              <div className="form-grid form-grid-3">
-                <FormField label="Start Date" value={exp.startDate} onChange={(v) => updateExperience(exp.id, 'startDate', v)} type="month" />
-                {!exp.currentlyWorking && (
-                  <FormField label="End Date" value={exp.endDate} onChange={(v) => updateExperience(exp.id, 'endDate', v)} type="month" />
-                )}
-                <div className="form-field checkbox-field">
-                  <label className="checkbox-label">
-                    <input type="checkbox" checked={exp.currentlyWorking} onChange={(e) => updateExperience(exp.id, 'currentlyWorking', e.target.checked)} />
-                    Currently working here
-                  </label>
-                </div>
-              </div>
-
-              <div className="responsibilities-section">
-                <div className="section-header-inline">
-                  <h4>What did you do in this role?</h4>
-                  <button type="button" className="btn-text" onClick={() => improveResponsibilities(exp.id)}>Improve with AI</button>
-                </div>
-                {exp.responsibilities.map((resp, rIndex) => (
-                  <div key={`${exp.id}-r-${rIndex}`} className="list-item-row">
-                    <span className="bullet">•</span>
-                    <input className="form-input" value={resp} onChange={(e) => updateList(exp.id, 'responsibilities', rIndex, e.target.value)} placeholder="Managed Vicidial systems" />
-                    {exp.responsibilities.length > 1 && (
-                      <button type="button" className="btn-icon btn-delete-sm" onClick={() => removeListItem(exp.id, 'responsibilities', rIndex)}>×</button>
-                    )}
-                  </div>
-                ))}
-                <button type="button" className="btn-text btn-add" onClick={() => addListItem(exp.id, 'responsibilities')}>+ Add responsibility</button>
-              </div>
-
-              <div className="achievements-section">
-                <h4>What did you accomplish in this role?</h4>
-                <div className="impact-helper">
-                  <p>Did you improve something?</p>
-                  <div className="role-type-grid">
-                    {IMPACT_TYPES.map((type) => (
-                      <button key={type} type="button" className={`role-chip ${impactType === type ? 'selected' : ''}`} onClick={() => setImpactType(type)}>
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="add-custom-skill" style={{ marginTop: 12 }}>
-                    <input className="form-input" value={impactNote} onChange={(e) => setImpactNote(e.target.value)} placeholder="Tell us what you changed, e.g. reporting that took 2 days now takes 30 minutes" />
-                    <button type="button" className="btn-primary btn-sm" onClick={() => addImpactAchievement(exp.id)}>Add result</button>
-                  </div>
-                </div>
-                {exp.achievements.map((ach, aIndex) => (
-                  <div key={`${exp.id}-a-${aIndex}`} className="list-item-row">
-                    <span className="bullet">★</span>
-                    <input className="form-input" value={ach} onChange={(e) => updateList(exp.id, 'achievements', aIndex, e.target.value)} placeholder="Reduced manual reporting time by 60%" />
-                    {exp.achievements.length > 1 && (
-                      <button type="button" className="btn-icon btn-delete-sm" onClick={() => removeListItem(exp.id, 'achievements', aIndex)}>×</button>
-                    )}
-                  </div>
-                ))}
-                <button type="button" className="btn-text btn-add" onClick={() => addListItem(exp.id, 'achievements')}>+ Add achievement</button>
+            <div className="form-grid">
+              <FormField
+                label="Location"
+                value={job.location}
+                onChange={(v) => update(job.id, { location: v })}
+                placeholder="e.g. Cape Town, SA"
+                optional
+              />
+              <div className="form-field">
+                <label className="form-label" htmlFor={`${job.id}-type`}>
+                  Employment type
+                </label>
+                <select
+                  id={`${job.id}-type`}
+                  className="form-input"
+                  value={job.employmentType}
+                  onChange={(e) =>
+                    update(job.id, { employmentType: e.target.value as WorkExperience['employmentType'] })
+                  }
+                >
+                  {EMPLOYMENT_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {EMPLOYMENT_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
-        </div>
-      ))}
 
-      <button type="button" className="btn-add-section" onClick={addExperience}>
-        <span className="plus-icon">+</span>
-        Add Work Experience
+            <div className="form-grid form-grid-3">
+              <FormField
+                label="Start date"
+                value={job.startDate}
+                onChange={(v) => update(job.id, { startDate: v })}
+                type="month"
+              />
+              {!job.currentlyWorking && (
+                <FormField
+                  label="End date"
+                  value={job.endDate}
+                  onChange={(v) => update(job.id, { endDate: v })}
+                  type="month"
+                  error={dateError}
+                  showError={Boolean(dateError)}
+                />
+              )}
+              <div className="form-field checkbox-field">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={job.currentlyWorking}
+                    onChange={(e) => update(job.id, { currentlyWorking: e.target.checked })}
+                  />
+                  I currently work here
+                </label>
+              </div>
+            </div>
+
+            <div className="bullet-section" role="group" aria-labelledby={`${job.id}-did`}>
+              <div className="section-header-inline">
+                <h4 id={`${job.id}-did`}>What did you do in this role?</h4>
+                <button
+                  type="button"
+                  className="btn-text"
+                  onClick={() => polish(job)}
+                  title="Removes “I…”, “Responsible for…” and fixes capitalisation. Undoable."
+                >
+                  Polish wording
+                </button>
+              </div>
+              <BulletList
+                label="responsibility"
+                itemLabel="Responsibility"
+                placeholder="e.g. Managed the company's call-centre systems"
+                bullets={job.responsibilities}
+                onChange={setBullets(job, 'responsibilities')}
+              />
+            </div>
+
+            <div className="bullet-section" role="group" aria-labelledby={`${job.id}-achieved`}>
+              <h4 id={`${job.id}-achieved`}>What did you achieve?</h4>
+              <div className="impact-helper">
+                <p id={`${job.id}-impact`}>
+                  Need help phrasing a result? Pick what improved, then describe the change.
+                </p>
+                <div className="chip-row" role="group" aria-labelledby={`${job.id}-impact`}>
+                  {(Object.keys(IMPACT_TYPES) as ImpactType[]).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`role-chip${impactType === type ? ' selected' : ''}`}
+                      aria-pressed={impactType === type}
+                      onClick={() => setImpactType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+                <div className="inline-add">
+                  <input
+                    className="form-input"
+                    value={impactNote}
+                    aria-label="Describe the change"
+                    onChange={(e) => setImpactNote(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addResult(job)}
+                    placeholder="e.g. 60% by automating the weekly report"
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary btn-sm"
+                    onClick={() => addResult(job)}
+                    disabled={!impactNote.trim()}
+                  >
+                    Add result
+                  </button>
+                </div>
+              </div>
+              <BulletList
+                label="achievement"
+                itemLabel="Achievement"
+                placeholder="e.g. Reduced manual reporting time by 60%"
+                bullets={job.achievements}
+                onChange={setBullets(job, 'achievements')}
+              />
+            </div>
+          </ItemCard>
+        );
+      })}
+
+      <button type="button" className="btn-add-section" onClick={addJob}>
+        <span className="plus-icon" aria-hidden="true">
+          +
+        </span>
+        Add work experience
       </button>
     </div>
   );

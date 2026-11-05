@@ -1,95 +1,145 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import FormField from '../UI/FormField';
-import { Education } from '../../types/cv';
-import { generateId } from '../../utils/helpers';
+import ItemCard from '../UI/ItemCard';
+import { createId } from '../../cv/id';
+import type { Education } from '../../cv/schema';
+import { dateRangeError } from '../../cv/validation';
+import { type EditorProps, moveItem, replaceById } from './types';
 
-interface EducationStepProps {
-  data: Education[];
-  onChange: (data: Education[]) => void;
-}
+const emptyEducation = (): Education => ({
+  id: createId(),
+  institution: '',
+  qualification: '',
+  fieldOfStudy: '',
+  startYear: '',
+  graduationYear: '',
+  currentlyStudying: false,
+  grade: '',
+  coursework: '',
+  academicAchievements: '',
+});
 
-const EducationStep: React.FC<EducationStepProps> = ({ data, onChange }) => {
-  const [expandedId, setExpandedId] = useState<string | null>(data[0]?.id || null);
+const EducationStep = ({ value: list, onChange }: EditorProps<Education[]>) => {
+  const [expandedId, setExpandedId] = useState<string | null>(list[0]?.id ?? null);
+  const update = (id: string, patch: Partial<Education>) => onChange(replaceById(list, id, patch));
 
-  const addEducation = () => {
-    const newEdu: Education = {
-      id: generateId(),
-      institution: '',
-      qualification: '',
-      fieldOfStudy: '',
-      startYear: '',
-      graduationYear: '',
-      currentlyStudying: false,
-      grade: '',
-      coursework: '',
-      academicAchievements: '',
-    };
-    onChange([...data, newEdu]);
-    setExpandedId(newEdu.id);
-  };
-
-  const updateEducation = (id: string, field: keyof Education, value: unknown) => {
-    onChange(data.map((edu) => (edu.id === id ? { ...edu, [field]: value } : edu)));
+  const add = () => {
+    const edu = emptyEducation();
+    onChange([...list, edu]);
+    setExpandedId(edu.id);
   };
 
   return (
     <div className="wizard-step">
-      <div className="step-header">
-        <h2>Education</h2>
-        <p>Add your educational background, starting with your most recent qualification.</p>
-      </div>
-
-      {data.length === 0 && (
+      {list.length === 0 && (
         <div className="empty-state">
-          <div className="empty-icon">🎓</div>
           <h3>No education added yet</h3>
-          <p>Add your qualifications to strengthen your CV</p>
+          <p>Add your qualifications to strengthen your CV.</p>
         </div>
       )}
 
-      {data.map((edu) => (
-        <div key={edu.id} className={`experience-card ${expandedId === edu.id ? 'expanded' : ''}`}>
-          <div className="experience-card-header" onClick={() => setExpandedId(expandedId === edu.id ? null : edu.id)}>
-            <div className="experience-card-info">
-              <h3>{edu.qualification || 'Untitled Qualification'}</h3>
-              <p>{edu.institution || 'Institution'}{edu.fieldOfStudy ? ` • ${edu.fieldOfStudy}` : ''}</p>
+      {list.map((edu, index) => {
+        const title = edu.qualification || 'Untitled qualification';
+        const dateError = dateRangeError(edu.startYear, edu.graduationYear, edu.currentlyStudying);
+        return (
+          <ItemCard
+            key={edu.id}
+            title={title}
+            subtitle={[edu.institution || 'Institution', edu.fieldOfStudy].filter(Boolean).join(' • ')}
+            expanded={expandedId === edu.id}
+            onToggle={() => setExpandedId(expandedId === edu.id ? null : edu.id)}
+            onRemove={() =>
+              onChange(
+                list.filter((item) => item.id !== edu.id),
+                `Deleted "${title}"`,
+              )
+            }
+            onMoveUp={index > 0 ? () => onChange(moveItem(list, index, -1)) : undefined}
+            onMoveDown={index < list.length - 1 ? () => onChange(moveItem(list, index, 1)) : undefined}
+          >
+            <div className="form-grid">
+              <FormField
+                label="Qualification / degree"
+                value={edu.qualification}
+                onChange={(v) => update(edu.id, { qualification: v })}
+                placeholder="e.g. Diploma in Information Technology"
+                required
+              />
+              <FormField
+                label="Institution"
+                value={edu.institution}
+                onChange={(v) => update(edu.id, { institution: v })}
+                placeholder="e.g. University of Cape Town"
+                required
+              />
             </div>
-            <div className="experience-card-actions">
-              <button type="button" className="btn-icon btn-delete" onClick={(e) => { e.stopPropagation(); onChange(data.filter((item) => item.id !== edu.id)); }}>🗑</button>
-              <span className={`chevron ${expandedId === edu.id ? 'open' : ''}`}>▼</span>
-            </div>
-          </div>
-
-          {expandedId === edu.id && (
-            <div className="experience-card-body">
-              <div className="form-grid">
-                <FormField label="Qualification / Degree" value={edu.qualification} onChange={(v) => updateEducation(edu.id, 'qualification', v)} placeholder="e.g. Diploma in Information Technology" required />
-                <FormField label="Institution" value={edu.institution} onChange={(v) => updateEducation(edu.id, 'institution', v)} placeholder="e.g. Cape Peninsula University of Technology" required />
+            <FormField
+              label="Field of study"
+              value={edu.fieldOfStudy}
+              onChange={(v) => update(edu.id, { fieldOfStudy: v })}
+              placeholder="e.g. Computer Science"
+              optional
+            />
+            <div className="form-grid form-grid-3">
+              <FormField
+                label="Start year"
+                value={edu.startYear}
+                onChange={(v) => update(edu.id, { startYear: v })}
+                placeholder="e.g. 2022"
+                inputMode="numeric"
+              />
+              {!edu.currentlyStudying && (
+                <FormField
+                  label="Graduation year"
+                  value={edu.graduationYear}
+                  onChange={(v) => update(edu.id, { graduationYear: v })}
+                  placeholder="e.g. 2025"
+                  inputMode="numeric"
+                  error={dateError}
+                  showError={Boolean(dateError)}
+                />
+              )}
+              <div className="form-field checkbox-field">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={edu.currentlyStudying}
+                    onChange={(e) => update(edu.id, { currentlyStudying: e.target.checked })}
+                  />
+                  Currently studying
+                </label>
               </div>
-              <FormField label="Field of Study" value={edu.fieldOfStudy} onChange={(v) => updateEducation(edu.id, 'fieldOfStudy', v)} placeholder="e.g. Computer Science, Information Technology" />
-              <div className="form-grid form-grid-3">
-                <FormField label="Start Year" value={edu.startYear} onChange={(v) => updateEducation(edu.id, 'startYear', v)} placeholder="e.g. 2022" />
-                {!edu.currentlyStudying && (
-                  <FormField label="Graduation Year" value={edu.graduationYear} onChange={(v) => updateEducation(edu.id, 'graduationYear', v)} placeholder="e.g. 2025" />
-                )}
-                <div className="form-field checkbox-field">
-                  <label className="checkbox-label">
-                    <input type="checkbox" checked={edu.currentlyStudying} onChange={(e) => updateEducation(edu.id, 'currentlyStudying', e.target.checked)} />
-                    Currently studying
-                  </label>
-                </div>
-              </div>
-              <FormField label="Grade / GPA" value={edu.grade} onChange={(v) => updateEducation(edu.id, 'grade', v)} placeholder="e.g. 3.8 / 4.0 or Cum Laude" optional />
-              <FormField label="Relevant Coursework" value={edu.coursework} onChange={(v) => updateEducation(edu.id, 'coursework', v)} placeholder="e.g. Data Structures, Algorithms, Database Systems" optional />
-              <FormField label="Academic Achievements" value={edu.academicAchievements} onChange={(v) => updateEducation(edu.id, 'academicAchievements', v)} placeholder="e.g. Dean's List, Academic Excellence Award" optional />
             </div>
-          )}
-        </div>
-      ))}
+            <FormField
+              label="Grade / GPA"
+              value={edu.grade}
+              onChange={(v) => update(edu.id, { grade: v })}
+              placeholder="e.g. 3.8 / 4.0 or Cum Laude"
+              optional
+            />
+            <FormField
+              label="Relevant coursework"
+              value={edu.coursework}
+              onChange={(v) => update(edu.id, { coursework: v })}
+              placeholder="e.g. Data Structures, Algorithms"
+              optional
+            />
+            <FormField
+              label="Academic achievements"
+              value={edu.academicAchievements}
+              onChange={(v) => update(edu.id, { academicAchievements: v })}
+              placeholder="e.g. Dean's List"
+              optional
+            />
+          </ItemCard>
+        );
+      })}
 
-      <button type="button" className="btn-add-section" onClick={addEducation}>
-        <span className="plus-icon">+</span>
-        Add Education
+      <button type="button" className="btn-add-section" onClick={add}>
+        <span className="plus-icon" aria-hidden="true">
+          +
+        </span>
+        Add education
       </button>
     </div>
   );

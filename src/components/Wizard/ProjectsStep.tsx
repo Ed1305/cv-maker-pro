@@ -1,104 +1,163 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import FormField from '../UI/FormField';
-import { Project } from '../../types/cv';
-import { generateId } from '../../utils/helpers';
+import ItemCard from '../UI/ItemCard';
+import { createId } from '../../cv/id';
+import type { Project } from '../../cv/schema';
+import { polishParagraph } from '../../cv/text';
+import { isValidUrl } from '../../cv/validation';
+import { type EditorProps, moveItem, replaceById } from './types';
 
-interface ProjectsStepProps {
-  data: Project[];
-  onChange: (data: Project[]) => void;
-}
+const emptyProject = (): Project => ({
+  id: createId(),
+  name: '',
+  description: '',
+  role: '',
+  technologies: '',
+  problem: '',
+  contribution: '',
+  projectUrl: '',
+  githubUrl: '',
+  date: '',
+});
 
-const ProjectsStep: React.FC<ProjectsStepProps> = ({ data, onChange }) => {
-  const [expandedId, setExpandedId] = useState<string | null>(data[0]?.id || null);
+const urlError = (value: string) =>
+  value.trim() && !isValidUrl(value) ? 'Enter a web address, e.g. github.com/you/project.' : undefined;
 
-  const addProject = () => {
-    const newProject: Project = {
-      id: generateId(),
-      name: '',
-      description: '',
-      role: '',
-      technologies: '',
-      problem: '',
-      contribution: '',
-      projectUrl: '',
-      githubUrl: '',
-      date: '',
-    };
-    onChange([...data, newProject]);
-    setExpandedId(newProject.id);
+const ProjectsStep = ({ value: list, onChange }: EditorProps<Project[]>) => {
+  const [expandedId, setExpandedId] = useState<string | null>(list[0]?.id ?? null);
+  const update = (id: string, patch: Partial<Project>, undoLabel?: string) =>
+    onChange(replaceById(list, id, patch), undoLabel);
+
+  const add = () => {
+    const project = emptyProject();
+    onChange([...list, project]);
+    setExpandedId(project.id);
   };
 
-  const updateProject = (id: string, field: keyof Project, value: string) => {
-    onChange(data.map((project) => (project.id === id ? { ...project, [field]: value } : project)));
-  };
-
-  const generateDescription = (id: string) => {
-    const project = data.find((item) => item.id === id);
-    if (!project) return;
-    const parts = [
-      project.name && `${project.name}`,
-      project.problem,
-      project.contribution,
-      project.technologies && `Built with ${project.technologies}.`,
-    ].filter(Boolean);
-    if (parts.length) updateProject(id, 'description', parts.join('. ').replace(/\.\./g, '.'));
+  const draftDescription = (project: Project) => {
+    const draft = polishParagraph(
+      [project.problem, project.contribution, project.technologies && `Built with ${project.technologies}`]
+        .map((part) => part.trim().replace(/[.!]+$/, ''))
+        .filter(Boolean)
+        .join('. '),
+    );
+    if (draft) update(project.id, { description: draft }, 'Drafted project description');
   };
 
   return (
     <div className="wizard-step">
-      <div className="step-header">
-        <h2>Projects</h2>
-        <p>Showcase your best work. This is especially valuable for developers and designers.</p>
-      </div>
-
-      {data.length === 0 && (
+      {list.length === 0 && (
         <div className="empty-state">
-          <div className="empty-icon">🚀</div>
           <h3>No projects added yet</h3>
-          <p>Add projects to demonstrate your practical skills</p>
+          <p>Add projects to show your practical skills.</p>
         </div>
       )}
 
-      {data.map((project) => (
-        <div key={project.id} className={`experience-card ${expandedId === project.id ? 'expanded' : ''}`}>
-          <div className="experience-card-header" onClick={() => setExpandedId(expandedId === project.id ? null : project.id)}>
-            <div className="experience-card-info">
-              <h3>{project.name || 'Untitled Project'}</h3>
-              <p>{project.technologies || 'Technologies'}</p>
+      {list.map((project, index) => {
+        const title = project.name || 'Untitled project';
+        return (
+          <ItemCard
+            key={project.id}
+            title={title}
+            subtitle={project.technologies || undefined}
+            expanded={expandedId === project.id}
+            onToggle={() => setExpandedId(expandedId === project.id ? null : project.id)}
+            onRemove={() =>
+              onChange(
+                list.filter((item) => item.id !== project.id),
+                `Deleted "${title}"`,
+              )
+            }
+            onMoveUp={index > 0 ? () => onChange(moveItem(list, index, -1)) : undefined}
+            onMoveDown={index < list.length - 1 ? () => onChange(moveItem(list, index, 1)) : undefined}
+          >
+            <div className="form-grid">
+              <FormField
+                label="Project name"
+                value={project.name}
+                onChange={(v) => update(project.id, { name: v })}
+                placeholder="e.g. Customer support portal"
+                required
+              />
+              <FormField
+                label="Your role"
+                value={project.role}
+                onChange={(v) => update(project.id, { role: v })}
+                placeholder="e.g. Lead developer"
+                optional
+              />
             </div>
-            <div className="experience-card-actions">
-              <button type="button" className="btn-icon btn-delete" onClick={(e) => { e.stopPropagation(); onChange(data.filter((item) => item.id !== project.id)); }}>🗑</button>
-              <span className={`chevron ${expandedId === project.id ? 'open' : ''}`}>▼</span>
+            <FormField
+              label="Technologies used"
+              value={project.technologies}
+              onChange={(v) => update(project.id, { technologies: v })}
+              placeholder="e.g. FastAPI, PostgreSQL, React"
+              optional
+            />
+            <div className="helper-card">
+              <p>Answer these two questions and we'll draft the description for you.</p>
+              <FormField
+                label="What problem did it solve?"
+                value={project.problem}
+                onChange={(v) => update(project.id, { problem: v })}
+                placeholder="e.g. Customer queries took days to answer"
+              />
+              <FormField
+                label="What did you personally build?"
+                value={project.contribution}
+                onChange={(v) => update(project.id, { contribution: v })}
+                placeholder="e.g. Built the backend API and WhatsApp integration"
+              />
+              <button type="button" className="btn-secondary btn-sm" onClick={() => draftDescription(project)}>
+                Draft description
+              </button>
             </div>
-          </div>
+            <FormField
+              label="Project description"
+              value={project.description}
+              onChange={(v) => update(project.id, { description: v })}
+              multiline
+              rows={3}
+              placeholder="One or two sentences on what it does and the impact."
+            />
+            <div className="form-grid">
+              <FormField
+                label="Project link"
+                value={project.projectUrl}
+                onChange={(v) => update(project.id, { projectUrl: v })}
+                placeholder="https://project-url.com"
+                type="url"
+                inputMode="url"
+                optional
+                error={urlError(project.projectUrl)}
+              />
+              <FormField
+                label="GitHub link"
+                value={project.githubUrl}
+                onChange={(v) => update(project.id, { githubUrl: v })}
+                placeholder="https://github.com/you/project"
+                type="url"
+                inputMode="url"
+                optional
+                error={urlError(project.githubUrl)}
+              />
+            </div>
+            <FormField
+              label="Date"
+              value={project.date}
+              onChange={(v) => update(project.id, { date: v })}
+              type="month"
+              optional
+            />
+          </ItemCard>
+        );
+      })}
 
-          {expandedId === project.id && (
-            <div className="experience-card-body">
-              <div className="form-grid">
-                <FormField label="Project Name" value={project.name} onChange={(v) => updateProject(project.id, 'name', v)} placeholder="e.g. OmniGig Support System" required />
-                <FormField label="Your Role" value={project.role} onChange={(v) => updateProject(project.id, 'role', v)} placeholder="e.g. Lead Developer" />
-              </div>
-              <FormField label="Technologies Used" value={project.technologies} onChange={(v) => updateProject(project.id, 'technologies', v)} placeholder="e.g. FastAPI, PostgreSQL, React, Docker" />
-              <FormField label="What problem did it solve?" value={project.problem} onChange={(v) => updateProject(project.id, 'problem', v)} placeholder="e.g. Manual customer support was taking too long" />
-              <FormField label="What did you personally build?" value={project.contribution} onChange={(v) => updateProject(project.id, 'contribution', v)} placeholder="e.g. Built the backend API and integrated WhatsApp messaging" />
-              <div className="section-header-inline">
-                <h4>Project Description</h4>
-                <button type="button" className="btn-text" onClick={() => generateDescription(project.id)}>Generate Description</button>
-              </div>
-              <FormField label="" value={project.description} onChange={(v) => updateProject(project.id, 'description', v)} multiline rows={3} placeholder="A comprehensive description of the project..." />
-              <div className="form-grid">
-                <FormField label="Project URL" value={project.projectUrl} onChange={(v) => updateProject(project.id, 'projectUrl', v)} placeholder="https://project-url.com" optional />
-                <FormField label="GitHub URL" value={project.githubUrl} onChange={(v) => updateProject(project.id, 'githubUrl', v)} placeholder="https://github.com/user/project" optional />
-              </div>
-              <FormField label="Date" value={project.date} onChange={(v) => updateProject(project.id, 'date', v)} type="month" optional />
-            </div>
-          )}
-        </div>
-      ))}
-
-      <button type="button" className="btn-add-section" onClick={addProject}>
-        <span className="plus-icon">+</span>
-        Add Project
+      <button type="button" className="btn-add-section" onClick={add}>
+        <span className="plus-icon" aria-hidden="true">
+          +
+        </span>
+        Add project
       </button>
     </div>
   );

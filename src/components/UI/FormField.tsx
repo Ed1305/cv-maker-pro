@@ -1,60 +1,91 @@
-import React from 'react';
+import { useId, useState, type HTMLInputTypeAttribute } from 'react';
 
 interface FormFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  type?: string;
+  type?: HTMLInputTypeAttribute;
   placeholder?: string;
   required?: boolean;
+  optional?: boolean;
   multiline?: boolean;
   rows?: number;
-  icon?: React.ReactNode;
   helperText?: string;
-  optional?: boolean;
+  /** Validation message. Shown once the user has left the field (or immediately if `showError`). */
+  error?: string;
+  showError?: boolean;
+  /** Keep the label for screen readers but don't show it. */
+  hideLabel?: boolean;
+  autoComplete?: string;
+  inputMode?: 'text' | 'email' | 'tel' | 'url' | 'numeric';
 }
 
-const FormField: React.FC<FormFieldProps> = ({
+const FormField = ({
   label,
   value,
   onChange,
   type = 'text',
   placeholder,
   required = false,
+  optional = false,
   multiline = false,
   rows = 3,
-  icon,
   helperText,
-  optional = false,
-}) => {
+  error,
+  showError = false,
+  hideLabel = false,
+  autoComplete,
+  inputMode,
+}: FormFieldProps) => {
+  const id = useId();
+  const [touched, setTouched] = useState(false);
+  const visibleError = error && (touched || showError) ? error : undefined;
+  const describedBy =
+    [visibleError && `${id}-error`, helperText && `${id}-help`].filter(Boolean).join(' ') || undefined;
+
+  const shared = {
+    id,
+    className: `form-input${multiline ? ' form-textarea' : ''}${visibleError ? ' has-error' : ''}`,
+    value,
+    placeholder,
+    required,
+    'aria-invalid': visibleError ? true : undefined,
+    'aria-describedby': describedBy,
+    onBlur: () => setTouched(true),
+  };
+
   return (
     <div className="form-field">
-      {label && (
-        <label className="form-label">
-          {icon && <span className="form-icon">{icon}</span>}
-          {label}
-          {optional && <span className="optional-badge">Optional</span>}
-          {required && <span className="required-star">*</span>}
-        </label>
-      )}
+      <label htmlFor={id} className={hideLabel ? 'visually-hidden' : 'form-label'}>
+        {label}
+        {optional && <span className="optional-badge">Optional</span>}
+        {required && (
+          <span className="required-star" aria-hidden="true">
+            *
+          </span>
+        )}
+      </label>
       {multiline ? (
-        <textarea
-          className="form-input form-textarea"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          rows={rows}
-        />
+        <textarea {...shared} rows={rows} onChange={(e) => onChange(e.target.value)} />
       ) : (
         <input
-          className="form-input"
+          {...shared}
           type={type}
-          value={value}
+          autoComplete={autoComplete}
+          inputMode={inputMode}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
         />
       )}
-      {helperText && <span className="helper-text">{helperText}</span>}
+      {helperText && (
+        <span id={`${id}-help`} className="helper-text">
+          {helperText}
+        </span>
+      )}
+      {visibleError && (
+        <span id={`${id}-error`} className="field-error">
+          {visibleError}
+        </span>
+      )}
     </div>
   );
 };

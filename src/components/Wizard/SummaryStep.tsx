@@ -1,77 +1,123 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import FormField from '../UI/FormField';
-import { ProfessionalSummary } from '../../types/cv';
-import { generateSummary, makeSummaryMoreProfessional, shortenText } from '../../utils/helpers';
+import type { ProfessionalSummary } from '../../cv/schema';
+import { draftSummary, polishParagraph, shortenParagraph } from '../../cv/text';
+import type { EditorProps } from './types';
 
-interface SummaryStepProps {
-  data: ProfessionalSummary;
-  onChange: (data: ProfessionalSummary) => void;
-}
-
-const SummaryStep: React.FC<SummaryStepProps> = ({ data, onChange }) => {
+const SummaryStep = ({ value: data, onChange }: EditorProps<ProfessionalSummary>) => {
   const [showHelper, setShowHelper] = useState(!data.summary);
-
-  const update = (field: keyof ProfessionalSummary, value: string) => {
-    onChange({ ...data, [field]: value });
+  const set = (field: keyof ProfessionalSummary) => (next: string) => onChange({ ...data, [field]: next });
+  const rewrite = (summary: string, label: string) => {
+    if (summary !== data.summary) onChange({ ...data, summary }, label);
   };
 
-  const handleGenerate = () => {
-    update(
-      'summary',
-      generateSummary(data.jobType, data.yearsExperience, data.strongestSkills, data.industries, data.uniqueValue, data.proudOf)
-    );
-    setShowHelper(false);
-  };
+  const draft = draftSummary(data);
 
   return (
     <div className="wizard-step">
       <div className="step-header">
-        <h2>About Me</h2>
-        <p>Write a short introduction, or answer a few questions and we will draft it for you.</p>
+        <h2 tabIndex={-1}>About me</h2>
+        <p>
+          Write two or three sentences about who you are and what you're good at — or answer a few questions and we'll
+          draft it.
+        </p>
       </div>
 
       {showHelper && (
-        <div className="summary-helper">
-          <div className="helper-card">
-            <h3>Let's build your summary</h3>
-            <p>These answers stay private. We only use them to draft the paragraph on your CV.</p>
+        <div className="helper-card">
+          <h3>Draft my summary</h3>
+          <p>We only use these answers to draft the paragraph. Nothing is sent anywhere.</p>
 
-            <div className="form-grid">
-              <FormField label="What type of job are you looking for?" value={data.jobType} onChange={(v) => update('jobType', v)} placeholder="e.g. Systems Developer, Project Manager" />
-              <FormField label="How many years of experience do you have?" value={data.yearsExperience} onChange={(v) => update('yearsExperience', v)} placeholder="e.g. 3" />
-            </div>
-
-            <FormField label="What are your strongest professional skills?" value={data.strongestSkills} onChange={(v) => update('strongestSkills', v)} placeholder="e.g. Python, React, Cloud Architecture, Team Leadership" />
-
-            <div className="form-grid">
-              <FormField label="What industries have you worked in?" value={data.industries} onChange={(v) => update('industries', v)} placeholder="e.g. Information Technology, Finance" />
-              <FormField label="What makes you different from other candidates?" value={data.uniqueValue} onChange={(v) => update('uniqueValue', v)} placeholder="e.g. Bridge between technical and business teams" />
-            </div>
-
-            <FormField label="What are you most proud of professionally?" value={data.proudOf} onChange={(v) => update('proudOf', v)} placeholder="e.g. Built a system that saved 60% manual effort" />
-
-            <button type="button" className="btn-primary btn-generate" onClick={handleGenerate}>
-              Generate Professional Summary
-            </button>
+          <div className="form-grid">
+            <FormField
+              label="What job are you looking for?"
+              value={data.jobType}
+              onChange={set('jobType')}
+              placeholder="e.g. Systems Developer"
+            />
+            <FormField
+              label="Years of experience"
+              value={data.yearsExperience}
+              onChange={set('yearsExperience')}
+              placeholder="e.g. 3"
+              inputMode="numeric"
+            />
           </div>
+          <FormField
+            label="Your strongest skills"
+            value={data.strongestSkills}
+            onChange={set('strongestSkills')}
+            placeholder="e.g. Python, React and team leadership"
+          />
+          <div className="form-grid">
+            <FormField
+              label="Industries you've worked in"
+              value={data.industries}
+              onChange={set('industries')}
+              placeholder="e.g. finance and retail"
+            />
+            <FormField
+              label="What makes you different?"
+              value={data.uniqueValue}
+              onChange={set('uniqueValue')}
+              placeholder="e.g. I bridge technical and business teams"
+            />
+          </div>
+          <FormField
+            label="What are you most proud of?"
+            value={data.proudOf}
+            onChange={set('proudOf')}
+            placeholder="e.g. Built a system that saved 60% of manual effort"
+          />
+
+          <button
+            type="button"
+            className="btn-primary btn-generate"
+            disabled={!draft}
+            onClick={() => {
+              rewrite(draft, 'Replaced summary with draft');
+              setShowHelper(false);
+            }}
+          >
+            Use this as my summary
+          </button>
+          {draft && <p className="draft-preview">{draft}</p>}
         </div>
       )}
 
-      <div className="summary-editor">
-        <FormField
-          label="About Me"
-          value={data.summary}
-          onChange={(v) => update('summary', v)}
-          multiline
-          rows={5}
-          placeholder="A compelling 2-3 sentence summary of your professional background, key skills, and career objectives..."
-        />
+      <FormField
+        label="About me"
+        value={data.summary}
+        onChange={set('summary')}
+        multiline
+        rows={5}
+        placeholder="e.g. Accountant with 5+ years of experience in retail finance. Known for turning month-end close from 10 days into 4."
+        helperText={`${data.summary.trim().split(/\s+/).filter(Boolean).length} words · 40–80 words works well`}
+      />
 
-        <div className="summary-actions">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowHelper(true)}>Regenerate</button>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => update('summary', shortenText(data.summary))}>Shorter</button>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => update('summary', makeSummaryMoreProfessional(data.summary))}>More Professional</button>
-        </div>
+      <div className="tool-row">
+        {!showHelper && (
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowHelper(true)}>
+            Draft from questions
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          disabled={!data.summary.trim()}
+          onClick={() => rewrite(shortenParagraph(data.summary), 'Shortened summary')}
+        >
+          Shorten
+        </button>
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          disabled={!data.summary.trim()}
+          title="Fixes spacing, capitalisation and punctuation."
+          onClick={() => rewrite(polishParagraph(data.summary), 'Tidied summary')}
+        >
+          Tidy punctuation
+        </button>
       </div>
     </div>
   );

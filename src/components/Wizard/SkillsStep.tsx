@@ -1,91 +1,120 @@
-import React, { useState } from 'react';
-import { Skill } from '../../types/cv';
-import { generateId, suggestedSkills } from '../../utils/helpers';
+import { useState } from 'react';
+import { CloseIcon } from '../UI/icons';
+import { createId } from '../../cv/id';
+import { SKILL_LEVELS, type Skill } from '../../cv/schema';
+import { SUGGESTED_SKILLS } from '../../cv/skills';
+import type { EditorProps } from './types';
 
-interface SkillsStepProps {
-  data: Skill[];
-  onChange: (data: Skill[]) => void;
-}
+const CATEGORIES = Object.keys(SUGGESTED_SKILLS);
 
-const SkillsStep: React.FC<SkillsStepProps> = ({ data, onChange }) => {
-  const [customSkill, setCustomSkill] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string>(Object.keys(suggestedSkills)[0]);
+const SkillsStep = ({ value: skills, onChange }: EditorProps<Skill[]>) => {
+  const [custom, setCustom] = useState('');
+  const [category, setCategory] = useState(CATEGORIES[0]);
 
-  const addSkill = (name: string, category: Skill['category'] = 'technical') => {
-    if (data.some((skill) => skill.name.toLowerCase() === name.toLowerCase())) return;
-    onChange([...data, { id: generateId(), name, category, proficiency: 'intermediate' }]);
+  const find = (name: string) => skills.find((skill) => skill.name.toLowerCase() === name.trim().toLowerCase());
+
+  const add = (name: string) => {
+    if (!name.trim() || find(name)) return;
+    const kind: Skill['category'] = category === 'Soft Skills' ? 'soft' : 'technical';
+    onChange([...skills, { id: createId(), name: name.trim(), category: kind, proficiency: 'intermediate' }]);
   };
 
-  const removeSkill = (id: string) => onChange(data.filter((skill) => skill.id !== id));
+  const remove = (skill: Skill) =>
+    onChange(
+      skills.filter((item) => item.id !== skill.id),
+      `Removed "${skill.name}"`,
+    );
 
-  const handleCustomAdd = () => {
-    if (!customSkill.trim()) return;
-    addSkill(customSkill.trim(), activeCategory === 'Soft Skills' ? 'soft' : 'technical');
-    setCustomSkill('');
+  const addCustom = () => {
+    add(custom);
+    setCustom('');
   };
-
-  const isSelected = (name: string) => data.some((skill) => skill.name.toLowerCase() === name.toLowerCase());
 
   return (
     <div className="wizard-step">
-      <div className="step-header">
-        <h2>Skills</h2>
-        <p>Pick skills from categories or add your own. Proficiency is stored for editing, but not shown as bars on the CV.</p>
-      </div>
-
-      {data.length > 0 && (
+      {skills.length > 0 && (
         <div className="selected-skills-section">
-          <h3>Your Skills ({data.length})</h3>
-          <div className="skills-tags">
-            {data.map((skill) => (
-              <div key={skill.id} className="skill-tag">
+          <h3>Your skills ({skills.length})</h3>
+          <p className="helper-text">Levels help you plan; they are not printed as bars on the CV.</p>
+          <ul className="skills-tags">
+            {skills.map((skill) => (
+              <li key={skill.id} className="skill-tag">
                 <span className="skill-name">{skill.name}</span>
                 <select
                   className="skill-proficiency-select"
+                  aria-label={`${skill.name} level`}
                   value={skill.proficiency}
-                  onChange={(e) => onChange(data.map((item) => (item.id === skill.id ? { ...item, proficiency: e.target.value as Skill['proficiency'] } : item)))}
+                  onChange={(e) =>
+                    onChange(
+                      skills.map((item) =>
+                        item.id === skill.id ? { ...item, proficiency: e.target.value as Skill['proficiency'] } : item,
+                      ),
+                    )
+                  }
                 >
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
+                  {SKILL_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </option>
+                  ))}
                 </select>
-                <button type="button" className="skill-remove" onClick={() => removeSkill(skill.id)}>×</button>
-              </div>
+                <button
+                  type="button"
+                  className="skill-remove"
+                  aria-label={`Remove ${skill.name}`}
+                  onClick={() => remove(skill)}
+                >
+                  <CloseIcon />
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
-      <div className="add-custom-skill">
+      <div className="inline-add">
         <input
           className="form-input"
-          value={customSkill}
-          onChange={(e) => setCustomSkill(e.target.value)}
-          placeholder="Type a skill and press Enter or click Add"
-          onKeyDown={(e) => e.key === 'Enter' && handleCustomAdd()}
+          value={custom}
+          aria-label="Add a skill"
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="Type a skill and press Enter"
+          onKeyDown={(e) => e.key === 'Enter' && addCustom()}
         />
-        <button type="button" className="btn-primary btn-sm" onClick={handleCustomAdd}>+ Add</button>
+        <button type="button" className="btn-primary btn-sm" onClick={addCustom} disabled={!custom.trim()}>
+          + Add
+        </button>
       </div>
 
       <div className="skill-categories">
-        <div className="category-tabs">
-          {Object.keys(suggestedSkills).map((cat) => (
-            <button key={cat} type="button" className={`category-tab ${activeCategory === cat ? 'active' : ''}`} onClick={() => setActiveCategory(cat)}>
-              {cat}
+        <div className="category-tabs" role="group" aria-label="Skill categories">
+          {CATEGORIES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={`category-tab${category === name ? ' active' : ''}`}
+              aria-pressed={category === name}
+              onClick={() => setCategory(name)}
+            >
+              {name}
             </button>
           ))}
         </div>
         <div className="category-skills">
-          {suggestedSkills[activeCategory]?.map((skill) => (
-            <button
-              key={skill}
-              type="button"
-              className={`suggestion-chip ${isSelected(skill) ? 'selected' : ''}`}
-              onClick={() => (isSelected(skill) ? removeSkill(data.find((item) => item.name === skill)?.id || '') : addSkill(skill, activeCategory === 'Soft Skills' ? 'soft' : 'technical'))}
-            >
-              {isSelected(skill) ? '✓' : '+'} {skill}
-            </button>
-          ))}
+          {SUGGESTED_SKILLS[category].map((name) => {
+            const selected = find(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                className={`suggestion-chip${selected ? ' selected' : ''}`}
+                aria-pressed={Boolean(selected)}
+                onClick={() => (selected ? remove(selected) : add(name))}
+              >
+                <span aria-hidden="true">{selected ? '✓' : '+'}</span> {name}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
